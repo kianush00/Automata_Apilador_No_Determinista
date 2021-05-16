@@ -1,0 +1,183 @@
+﻿<html>
+<head>
+    <meta charset="utf-8" />
+    <script>
+        var estados = "q,s,t";
+        var alfabeto = "a,b";
+        var delta = "(q,a,A)=q/AA;"
+                  + "(q,a,W)=q/AW;"
+                  + "(q,b,A)=s/_;" 
+                  + "(s,b,A)=s/_;"
+                  + "(s,_,W)=t/_";
+        var finales = "t";
+        var iniciales = "q";   //pasó de "inicial" a "iniciales"
+        var pila_inicial = "W";
+        // para desempilar use
+
+        // crea variables para proceso autómata con pila
+        var transicion = delta.split(";");
+        var final = finales.split(",");
+        var inicial = iniciales.split(",");  //el arreglo "inicial" contiene los estados iniciales por separado
+        var _alfabeto = alfabeto.split(",");
+        var par = [];
+        var resultado = [];
+        var nuevotope = [];
+        var taux;
+        var stopmsg = "Proceso normal";
+        var traza = "";
+        var futuros = [];   //vector global que se usará para formar nuevos conjuntos de estados actuales
+        var nuevoEstado;    //nueva variable global
+
+        // prepara vectores globales para transiciones
+        for (var i = 0; i < transicion.length; i++) {
+            taux = transicion[i].split("=");
+            par.push(taux[0]);
+            resultado.push(taux[1].split("/")[0]);
+            nuevotope.push(taux[1].split("/")[1]);
+        }
+
+        function procesaTodo() {
+            traza = "";
+            var txArea = document.getElementById('todo');
+            var tx = txArea.value;
+            var pal = tx.split("\n");
+            var out = "";
+
+            for (var i = 0; i < pal.length; i++) {
+                stopmsg = "Proceso normal";
+                traza += "<br><br><u><b>Procesando " + pal[i] + "</b></u>";
+                out += pal[i] + " --> " + procesaPalabra(pal[i]) + "<br>";
+            }
+            document.getElementById('salida').innerHTML = out;
+
+            /* Si el checkbox de trazabilidad está marcado, se inserta el contenido de la traza en el
+               campo de los pasos, en el caso contrario se inserta una cadena vacía, sin mostrar nada.  */
+            var trazable = document.getElementById('traza');
+            if (trazable.checked) {
+                document.getElementById('pasos').innerHTML = traza;
+            } else {
+                document.getElementById('pasos').innerHTML = "";
+            } 
+        }
+
+        function procesaPalabra(palabra) {
+            var letra = palabra.split("");
+            var actual = [];    //se define "actual" como un vector que guarda varios estados actuales
+            futuros = [];  //los estados actuales luego se redefinirán en un nuevo conjunto compuesto por "futuros"
+            for (var i = 0; i < inicial.length; i++) {   //se definen los estados iniciales en el arreglo "actual" por separado
+                actual.push(inicial[i] + "," + pila_inicial);
+            }
+            if (palabra.replace(/\s/g, '').length <= 0) {   //si la palabra es vacía, se comprueba si es posible hacer transiciones con palabra vacía
+                for (var j = 0; j < actual.length; j++) {   // j recorre estados iniciales
+                    cambiaEstadoEpsilon(actual[j]);
+                }
+                traza += "<br>";    //se define un salto de línea en la traza
+                actual = actual.concat(futuros);    //se agregan las transiciones epsilon al conjunto de estados actuales
+            } else {
+                for (var i = 0; (i < letra.length) && (!actual.includes("error")) && (actual.length > 0); i++) {   // i recorre letras
+                    traza += "<br>Procesando palabra " + palabra + " letra " + letra[i];    //se muestra el proceso de forma paralela
+                    futuros = [];  //los estados actuales luego se redefinirán en un nuevo conjunto compuesto por "futuros"
+                    for (var j = 0; j < actual.length; j++) {    // j recorre estados actuales
+                        //Se encapsula el proceso de cambio de estado actual en el siguiente método
+                        cambiaEstadoActual(letra[i], actual[j]);
+                        //Se procesa epsilon en caso de que esté definido en el autómata después de procesar la letra
+                        cambiaEstadoEpsilon(nuevoEstado);
+                    }
+                    traza += "<br>";    //se define un salto de línea en la traza
+                    actual = [... new Set(futuros)];    //se redefinen los estados actuales en un nuevo conjunto compuesto por "futuros"
+                }
+            }
+            traza += "<br>" + stopmsg;
+            var ultimoActual = [];    //se define arreglo que contendrá la parte del estado de cada elemento [estado,pila]
+            for (var i = 0; i < actual.length; i++) {   //se llena arreglo "ultimoActual"
+                ultimoActual.push(actual[i].split(",")[0]);
+            }
+            return final.some(u => ultimoActual.includes(u));   //retorna true si algún estado final es a su vez actual
+        }
+
+        function cambiaEstado(letra, estadoComaPila) {
+            var aux = estadoComaPila.split(",");
+            if (estadoComaPila === "error") return "error";    //para evitar un stopmsg erróneo
+            if (aux[1].length <= 0) {
+                stopmsg = "Intenta transición con pila vacía";
+                return "error";
+            }
+            var busca = '(' + aux[0] + ',' + letra + ',' + aux[1].charAt(0) + ')';
+            var k = par.indexOf(busca);
+            if (k >= 0) {   //existe transición
+                if (nuevotope[k] === '_')    //desempila
+                    return resultado[k] + ',' + pop(aux[1]);
+                else                        //empila    
+                    return resultado[k] + ',' + newtop(aux[1], nuevotope[k]);
+            }   //no existe transición
+            else {
+                //es indeterminado si la letra no es epsilon o no se encuentra dentro del alfabeto
+                if ((letra !== "_") && (!_alfabeto.includes(letra))) stopmsg = "Indeterminación para " + busca; 
+                return "error";
+            }
+        }
+
+        function cambiaEstadoActual(letra, estado) {
+            nuevoEstado = cambiaEstado(letra, estado);   //se define el cambio de estado en la variable "nuevoEstado"
+            if (nuevoEstado !== "error") {
+                //se definen las transiciones paralelas en la traza y se define el resultado en la traza
+                traza += "<br> " + letra + " en " + estado + "--> " + nuevoEstado;
+                futuros.push(nuevoEstado);   //el arreglo "futuros" contiene los cambios de estado paralelos en la letra i
+            }
+        }
+
+        //Se comprueba si es posible hacer transiciones con palabra vacía, en caso de cumplirse se agrega a los estados futuros
+        function cambiaEstadoEpsilon(estado) {
+            var epsilonEstado = cambiaEstado("_", estado);
+            if (epsilonEstado !== "error") {
+                traza += "<br> _ en " + estado + "--> " + epsilonEstado;
+                futuros.push(epsilonEstado);
+            }
+        }
+
+        function newtop(pilaString,tope) {
+            pilaString = pop(pilaString);
+            return tope + pilaString;
+        }
+
+        function pop(pilaString) {
+            return pilaString.substring(1);
+        }
+
+        function w(msg) {
+            document.write(msg);
+        }
+
+    </script>
+</head>
+<body>
+
+    <h3>Autómata Empilador</h3>
+    Estados = {
+    <script>w(estados);</script>}<br>
+    Alfabeto = {
+    <script>w(alfabeto);</script>}<br>
+    Transiciones = {
+    <script>w(delta.replace(/;/gi, " , "));</script>}<br>
+    Finales = {
+    <script>w(finales);</script>}<br>
+    Iniciales = {
+    <script>w(iniciales);</script>}<br>
+    Palabras a procesar:<br>
+    <table>
+        <tr><td>
+<textarea cols=40 rows=12 id="todo">
+aaaabbbb
+bbbaaa
+aaabbb
+</textarea>
+        </td>
+        <td id="salida" bgcolor="#AAFFAA"></td>
+        </tr>
+    </table>
+    <br>
+    <input type="checkbox" id="traza" checked>Trazable
+    <button onclick="procesaTodo()">Procesar</button>
+    <div id="pasos"></div>
+</body>
+</html>
